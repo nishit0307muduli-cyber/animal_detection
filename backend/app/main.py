@@ -67,6 +67,10 @@ app.add_middleware(
 # Serve annotated output videos / images
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 
+# Serve the React frontend build (generated in Docker)
+# This will serve index.html and static assets under the root path
+app.mount("/", StaticFiles(directory="static", html=True), name="frontend")
+
 # Include routers
 app.include_router(detect.router, prefix="/api")
 app.include_router(jobs.router,   prefix="/api")
