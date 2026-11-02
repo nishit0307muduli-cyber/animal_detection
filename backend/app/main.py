@@ -65,7 +65,9 @@ app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 
 # Serve the React frontend build (generated in Docker)
 # This will serve index.html and static assets under the root path
-app.mount("/", StaticFiles(directory="static", html=True), name="frontend")
+# Ensure static folder exists (creates empty folder if missing)
+Path("static").mkdir(exist_ok=True)
+# Serve the React frontend build (generated in Docker)\n# Serve static assets under '/static' to avoid route conflicts\napp.mount("/static", StaticFiles(directory="static", html=True), name="frontend")
 
 # Include routers
 app.include_router(detect.router, prefix="/api")

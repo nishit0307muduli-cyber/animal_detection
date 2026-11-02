@@ -111,6 +111,7 @@ cd D:\Animal
 .\.venv\Scripts\Activate.ps1
 cd backend
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Ensure a backend/static folder exists (will be populated after building the frontend)
 ```
 
 **Terminal 2 — Frontend:**
@@ -134,7 +135,35 @@ Open **http://localhost:5173** in your browser.
 | GET | `/api/jobs/{job_id}` | Poll video processing progress |
 | GET | `/api/results/{job_id}` | Get completed video results |
 | GET | `/api/download/{job_id}` | Download the annotated output video |
+## 🔗 Connecting Frontend & Backend
 
+The frontend (Vite dev server) proxies all `/api` and `/outputs` requests to the backend running at **http://localhost:8000**. This is configured in `frontend/vite.config.js`:
+
+```js
+server: {
+  proxy: {
+    '/api': { target: 'http://localhost:8000', changeOrigin: true },
+    '/outputs': { target: 'http://localhost:8000', changeOrigin: true },
+  },
+}
+```
+
+When you run both services (via `run_all.bat` or the two separate terminals), the UI automatically talks to the API.
+
+### Production
+
+After building the React app (`npm run build`), copy the `dist` folder to `backend/static`. The FastAPI app serves the static files and the same API endpoints, so the frontend and backend work together without a proxy.
+
+If you deploy to a platform (Render, Railway, etc.), set an environment variable `VITE_BACKEND_URL` pointing to the live backend URL and adjust `frontend/src/services/api.js`:
+
+```js
+const base = import.meta.env.VITE_BACKEND_URL || '/api';
+const api = axios.create({ baseURL: base });
+```
+
+Now the deployed frontend will call the correct backend URL.
+
+**Tip:** Ensure the backend `static` directory exists (e.g., `mkdir static`) before running tests or deploying.
 **Interactive docs:** http://localhost:8000/docs
 
 ---
@@ -242,6 +271,8 @@ python -m pytest tests/ -v --tb=short
 ## 📝 License
 
 Research prototype — for educational and demonstration purposes only.
+
+**Prerequisite:** Ensure Git is installed and available in your PATH (`git --version`).
 
 ## 📤 Pushing to GitHub
 
