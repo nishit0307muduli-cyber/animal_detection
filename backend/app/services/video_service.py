@@ -146,8 +146,12 @@ class VideoService:
             job.total_frames = total_frames
             job.message      = f"Processing {total_frames} frames…"
 
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            # Use H.264 (avc1) for high-definition browser playback, fallback to mp4v
+            fourcc = cv2.VideoWriter_fourcc(*"avc1")
             writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+            if not writer.isOpened():
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
             frame_detections = []
             alert_frames     = 0

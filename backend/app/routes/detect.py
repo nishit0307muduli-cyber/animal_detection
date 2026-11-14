@@ -14,7 +14,9 @@ from app.services.video_service import VideoService
 from app.utils.file_utils import (
     safe_filename,
     validate_image_file,
-    validate_video_file,
+    ALLOWED_VIDEO_EXTS,
+    ALLOWED_VIDEO_TYPES,
+    MAX_VIDEO_BYTES,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,9 +31,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 async def health():
     svc = DetectionService()
     return {
-        "status":        "ok",
-        "model_loaded":  svc.model_loaded,
-        "model_info":    svc.model_info,
+        "status":         "ok",
+        "model_loaded":   svc.model_loaded,
+        "model_info":     svc.model_info,
         "animal_classes": list(svc.ANIMAL_CLASSES.values()),
     }
 
@@ -87,7 +89,7 @@ async def detect_image(
     return result
 
 
-# ── Video Upload ──────────────────────────────────────────────────────────────
+# ── Video Upload (Chunked streaming up to 500 MB) ──────────────────────────────
 @router.post("/detect/video")
 async def detect_video(
     file:        UploadFile = File(...),
@@ -98,15 +100,15 @@ async def detect_video(
     danger_zone: str        = Form("[]"),
 ):
     """
-    Upload a video → submit background job → return job_id for polling.
+    Upload a video up to 500 MB → stream chunks to disk to protect RAM →
+    submit background job → return job_id for polling.
     """
-    contents = await file.read()
-
-    # Validate
-    try:
-        validate_video_file(file.filename or "video", file.content_type or "", len(contents))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_VIDEO_EXTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported video extension: {ext}. Allowed: {sorted(ALLOWED_VIDEO_EXTS)}"
+        )
 
     try:
         zone: list[dict] = json.loads(danger_zone) if danger_zone else []
@@ -116,11 +118,28 @@ async def detect_video(
     confidence  = max(0.05, min(0.95, confidence))
     sample_rate = max(1, min(30, sample_rate))
 
-    # Save uploaded file
+    # Stream video directly to disk in 2 MB chunks (keeps memory footprint under 15 MB)
     safe_name  = safe_filename(file.filename or "video.mp4")
     video_path = UPLOAD_DIR / safe_name
-    async with aiofiles.open(video_path, "wb") as f:
-        await f.write(contents)
+    total_bytes = 0
+
+    try:
+        async with aiofiles.open(video_path, "wb") as f:
+            while chunk := await file.read(2 * 1024 * 1024):  # 2MB chunks
+                total_bytes += len(chunk)
+                if total_bytes > MAX_VIDEO_BYTES:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Video exceeds limit ({total_bytes / 1e6:.1f} MB). Maximum allowed is 500 MB."
+                    )
+                await f.write(chunk)
+    except HTTPException:
+        video_path.unlink(missing_ok=True)
+        raise
+    except Exception as e:
+        video_path.unlink(missing_ok=True)
+        logger.error(f"Failed to stream video upload: {e}")
+        raise HTTPException(status_code=500, detail="Video streaming write error.")
 
     # Submit job
     detection_svc = DetectionService()
@@ -136,4 +155,8 @@ async def detect_video(
         show_conf     = show_conf,
     )
 
-    return {"status": "queued", "job_id": job_id, "message": "Video submitted for processing."}
+    return {
+        "status": "queued",
+        "job_id": job_id,
+        "message": f"High-capacity video ({total_bytes / 1e6:.1f} MB) submitted for processing.",
+    }

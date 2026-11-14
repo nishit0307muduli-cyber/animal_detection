@@ -165,8 +165,8 @@ export default function UploadSection({
               </p>
               <p className="text-[11px] text-slate-400 mt-1 font-mono">
                 {activeTab === 'image'
-                  ? 'JPG • PNG • WEBP • BMP (Up to 20MB)'
-                  : 'MP4 • AVI • MOV • MKV (Up to 100MB)'}
+                  ? 'JPG • PNG • WEBP • BMP (Up to 25MB)'
+                  : 'MP4 • AVI • MOV • MKV (High-Res • Up to 500MB)'}
               </p>
             </div>
 
