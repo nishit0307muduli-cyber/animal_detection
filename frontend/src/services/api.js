@@ -1,6 +1,13 @@
 import axios from 'axios'
 
-const api = axios.create({ baseURL: '/api' })
+// Dynamically use backend URL if set (e.g. for Vercel -> Render hybrid deployment)
+const BACKEND_BASE = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
+  : ''
+
+const api = axios.create({
+  baseURL: BACKEND_BASE ? `${BACKEND_BASE}/api` : '/api',
+})
 
 /** GET /api/health */
 export const getHealth = () => api.get('/health')
@@ -49,4 +56,4 @@ export const pollJob = (jobId) => api.get(`/jobs/${jobId}`)
 export const getResults = (jobId) => api.get(`/results/${jobId}`)
 
 /** GET /api/download/:jobId  — returns a URL */
-export const downloadUrl = (jobId) => `/api/download/${jobId}`
+export const downloadUrl = (jobId) => `${BACKEND_BASE}/api/download/${jobId}`
