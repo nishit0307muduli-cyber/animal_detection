@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Upload, Image as ImageIcon, Film, Camera, FolderOpen, Sparkles } from 'lucide-react'
+import { Upload, Image as ImageIcon, Film, Camera, History, FolderOpen, Sparkles } from 'lucide-react'
 import { DEMO_SCENARIOS } from '../utils/demoScenarios'
 
 const IMAGE_ACCEPT = '.jpg,.jpeg,.png,.webp,.bmp'
@@ -41,8 +41,8 @@ export default function UploadSection({
           <span>Surveillance Input Feed</span>
         </p>
 
-        {/* Media Type Tabs: Image, Video, Live Cam */}
-        <div className="flex gap-1 bg-navy-950/80 p-1 rounded-xl border border-navy-800">
+        {/* Media Type Tabs: Image, Video, Live Cam, History */}
+        <div className="flex flex-wrap gap-1 bg-navy-950/80 p-1 rounded-xl border border-navy-800">
           <button
             id="tab-image"
             className={`tab-btn ${activeTab === 'image' ? 'active' : ''}`}
@@ -70,10 +70,19 @@ export default function UploadSection({
             <Camera className="w-3.5 h-3.5 text-red-400 animate-pulse" />
             <span>Live Cam</span>
           </button>
+          <button
+            id="tab-history"
+            className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => onTabChange('history')}
+            disabled={disabled}
+          >
+            <History className="w-3.5 h-3.5 text-amber-400" />
+            <span>History</span>
+          </button>
         </div>
       </div>
 
-      {/* When in Live Cam mode, show quick live switcher info */}
+      {/* Live Cam Notice */}
       {activeTab === 'live' && (
         <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/30 text-xs text-slate-300 space-y-1">
           <p className="font-semibold text-cyan-300 flex items-center gap-1.5 font-mono">
@@ -82,7 +91,20 @@ export default function UploadSection({
           </p>
           <p className="text-[11px] text-slate-400 leading-relaxed">
             Real-time optical detection is active on the right panel.
-            You can connect your USB track surveillance camera, laptop webcam, or simulated CCTV stream.
+            Supports phone rear camera, USB webcams, or simulated CCTV track stream.
+          </p>
+        </div>
+      )}
+
+      {/* History Notice */}
+      {activeTab === 'history' && (
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-slate-300 space-y-1">
+          <p className="font-semibold text-amber-300 flex items-center gap-1.5 font-mono">
+            <History className="w-3.5 h-3.5 text-amber-400" />
+            <span>INSPECTION AUDIT LOG ACTIVE</span>
+          </p>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Viewing persistent inspection history, threat reports, and past scan telemetry.
           </p>
         </div>
       )}
@@ -137,7 +159,7 @@ export default function UploadSection({
       )}
 
       {/* Drag & Drop File Zone (Image & Video modes) */}
-      {activeTab !== 'live' && (
+      {(activeTab === 'image' || activeTab === 'video') && (
         <div className="space-y-2">
           <div
             id="drop-zone"

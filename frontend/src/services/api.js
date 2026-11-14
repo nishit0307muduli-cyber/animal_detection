@@ -1,16 +1,43 @@
 import axios from 'axios'
 
-// Dynamically use backend URL if set (e.g. for Vercel -> Render hybrid deployment)
-const BACKEND_BASE = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
-  : ''
+// Get configured backend URL from localStorage, env, or relative path
+export const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('railguard_api_url')
+    if (custom && custom.trim()) {
+      return custom.trim().replace(/\/$/, '')
+    }
+  }
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/$/, '')
+  }
+  return ''
+}
 
+export const setApiBaseUrl = (url) => {
+  if (typeof window !== 'undefined') {
+    if (!url || !url.trim()) {
+      localStorage.removeItem('railguard_api_url')
+    } else {
+      localStorage.setItem('railguard_api_url', url.trim().replace(/\/$/, ''))
+    }
+  }
+}
+
+// Create Axios client with 45s timeout to handle Render cold-starts gracefully
 const api = axios.create({
-  baseURL: BACKEND_BASE ? `${BACKEND_BASE}/api` : '/api',
+  timeout: 45000,
 })
 
-/** GET /api/health */
-export const getHealth = () => api.get('/health')
+// Dynamically attach baseURL for every request
+api.interceptors.request.use((config) => {
+  const base = getApiBaseUrl()
+  config.baseURL = base ? `${base}/api` : '/api'
+  return config
+})
+
+/** GET /api/health (with configurable timeout) */
+export const getHealth = (timeout = 25000) => api.get('/health', { timeout })
 
 /**
  * POST /api/detect/image
@@ -55,5 +82,8 @@ export const pollJob = (jobId) => api.get(`/jobs/${jobId}`)
 /** GET /api/results/:jobId */
 export const getResults = (jobId) => api.get(`/results/${jobId}`)
 
-/** GET /api/download/:jobId  — returns a URL */
-export const downloadUrl = (jobId) => `${BACKEND_BASE}/api/download/${jobId}`
+/** GET /api/download/:jobId — returns full download URL */
+export const downloadUrl = (jobId) => {
+  const base = getApiBaseUrl()
+  return `${base}/api/download/${jobId}`
+}

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Camera, CameraOff, Video, Radio, AlertTriangle, ShieldCheck,
-  RefreshCw, Settings, Info, Cpu, Play, Square, ExternalLink
+  RefreshCw, Settings, Info, Cpu, Play, Square, ExternalLink,
+  SwitchCamera, Smartphone
 } from 'lucide-react'
 import { detectImage } from '../services/api'
 import { playSound } from '../utils/audioAlert'
@@ -26,6 +27,11 @@ export default function LiveCameraSection({
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [errorMsg, setErrorMsg] = useState(null)
 
+  // Mobile Rear vs Front Camera Facing Mode
+  // 'environment' = back / rear camera (ideal for mobile track detection!)
+  // 'user' = selfie / front camera
+  const [facingMode, setFacingMode] = useState('environment')
+
   // Live Metrics
   const [fps, setFps] = useState(0)
   const [latency, setLatency] = useState(0)
@@ -43,8 +49,20 @@ export default function LiveCameraSection({
       const allDevs = await navigator.mediaDevices.enumerateDevices()
       const videoDevs = allDevs.filter(d => d.kind === 'videoinput')
       setDevices(videoDevs)
+
+      // Auto-detect rear camera if available
       if (videoDevs.length > 0 && !selectedDeviceId) {
-        setSelectedDeviceId(videoDevs[0].deviceId)
+        const backCam = videoDevs.find(d =>
+          d.label.toLowerCase().includes('back') ||
+          d.label.toLowerCase().includes('rear') ||
+          d.label.toLowerCase().includes('environment') ||
+          d.label.toLowerCase().includes('0, facing back')
+        )
+        if (backCam) {
+          setSelectedDeviceId(backCam.deviceId)
+        } else {
+          setSelectedDeviceId(videoDevs[0].deviceId)
+        }
       }
     } catch (err) {
       console.warn('Could not list media devices:', err)
@@ -201,7 +219,7 @@ export default function LiveCameraSection({
 
             drawOverlay(dets, vw, vh)
           } else {
-            // Simulated live detection if backend is offline
+            // Simulated live detection if backend is offline/demo
             const elapsed = Math.round(performance.now() - t0)
             setLatency(elapsed)
             setFps(3)
@@ -232,18 +250,25 @@ export default function LiveCameraSection({
     }
   }, [backendOnline, settings, soundEnabled, onAlertChange, drawOverlay])
 
-  // Start Webcam Stream
-  const startWebcam = async () => {
+  // Start Webcam Stream with explicit mobile Rear/Front camera support
+  const startWebcamWithMode = async (mode = facingMode, deviceId = selectedDeviceId) => {
     setErrorMsg(null)
     stopCamera()
     try {
-      const constraints = {
-        video: selectedDeviceId
-          ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
-          : { width: { ideal: 640 }, height: { ideal: 480 } },
+      // Prioritize facingMode for mobile phones (environment = back/rear camera)
+      const videoConstraints = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : {
+            facingMode: { ideal: mode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
         audio: false,
-      }
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      })
+
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
@@ -251,11 +276,24 @@ export default function LiveCameraSection({
       }
       setIsStreaming(true)
 
+      // Re-enumerate devices now that permission is granted
+      loadDevices()
+
       // Start inference loop (every 350ms ≈ 3 FPS for balanced CPU load)
       loopRef.current = setInterval(processFrame, 350)
     } catch (err) {
       console.error('Camera access error:', err)
-      setErrorMsg(`Could not connect camera: ${err.message || 'Permission denied'}`)
+      setErrorMsg(`Could not connect camera: ${err.message || 'Permission denied'}. On mobile, ensure browser camera permissions are enabled.`)
+    }
+  }
+
+  // Toggle Flip Camera (Rear ↔ Front)
+  const toggleFlipCamera = async () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment'
+    setFacingMode(nextMode)
+    setSelectedDeviceId('') // Clear deviceId so facingMode takes precedence
+    if (isStreaming) {
+      await startWebcamWithMode(nextMode, '')
     }
   }
 
@@ -269,7 +307,6 @@ export default function LiveCameraSection({
       videoRef.current.src = ''
     }
 
-    // Interval to cycle through benchmark tracks
     let counter = 0
     loopRef.current = setInterval(() => {
       const scenario = DEMO_SCENARIOS[counter % DEMO_SCENARIOS.length]
@@ -319,7 +356,7 @@ export default function LiveCameraSection({
           }`}
         >
           <Camera className="w-3.5 h-3.5" />
-          <span>Webcam / USB</span>
+          <span>Phone / Webcam</span>
         </button>
         <button
           onClick={() => { stopCamera(); setCameraMode('simulation') }}
@@ -345,31 +382,57 @@ export default function LiveCameraSection({
         </button>
       </div>
 
-      {/* Mode 1: Webcam / USB Camera Controls */}
+      {/* Mode 1: Mobile Phone / Webcam Controls */}
       {cameraMode === 'webcam' && (
         <div className="space-y-3">
+          {/* Mobile Rear Camera Badge & Quick Switch Button */}
+          <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-navy-950/50 border border-navy-800">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-cyan-400" />
+              <span className="text-xs font-semibold text-slate-200">Phone Orientation:</span>
+              <span className={`text-[11px] font-mono px-2 py-0.5 rounded border font-bold ${
+                facingMode === 'environment'
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+              }`}>
+                {facingMode === 'environment' ? '📸 REAR CAMERA (BACK)' : '🤳 FRONT CAMERA (SELFIE)'}
+              </span>
+            </div>
+
+            <button
+              onClick={toggleFlipCamera}
+              className="btn-secondary text-xs py-1.5 px-3 bg-navy-800 hover:bg-navy-700 text-cyan-300 border-cyan-500/30"
+              title="Switch between Rear (Back) and Front camera on phone"
+            >
+              <SwitchCamera className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{facingMode === 'environment' ? 'Switch to Front' : 'Switch to Rear (Back)'}</span>
+            </button>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex-1 min-w-[200px]">
-              <label className="text-[11px] font-mono text-slate-400 block mb-1">Optical Input Device:</label>
+              <label className="text-[11px] font-mono text-slate-400 block mb-1">Specific Camera Sensor:</label>
               <select
                 value={selectedDeviceId}
-                onChange={(e) => setSelectedDeviceId(e.target.value)}
-                disabled={isStreaming}
+                onChange={(e) => {
+                  setSelectedDeviceId(e.target.value)
+                  if (isStreaming) startWebcamWithMode(facingMode, e.target.value)
+                }}
                 className="w-full bg-navy-900 border border-navy-700 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-cyan-500"
               >
-                {devices.length === 0 && <option value="">Default Integrated Camera</option>}
+                <option value="">Default ({facingMode === 'environment' ? 'Rear / Back Camera' : 'Front Camera'})</option>
                 {devices.map((d, i) => (
                   <option key={d.deviceId || i} value={d.deviceId}>
-                    {d.label || `Camera ${i + 1}`}
+                    {d.label || `Camera ${i + 1} (${facingMode})`}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="flex items-end gap-2 pt-5">
+            <div className="flex items-end gap-2 pt-2 sm:pt-5">
               {!isStreaming ? (
                 <button
-                  onClick={startWebcam}
+                  onClick={() => startWebcamWithMode(facingMode, selectedDeviceId)}
                   className="btn-primary text-xs py-2 px-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
                 >
                   <Play className="w-3.5 h-3.5" />
@@ -486,7 +549,7 @@ export default function LiveCameraSection({
             <div>
               <p className="text-sm font-bold text-slate-300">Live Optical Stream Inactive</p>
               <p className="text-xs text-slate-500 mt-1 max-w-sm">
-                Click <strong>"Start Live Stream"</strong> to connect your camera or launch the track CCTV loop simulation.
+                Click <strong>"Start Live Stream"</strong> to connect your phone camera ({facingMode === 'environment' ? 'Rear' : 'Front'}) or launch the track CCTV loop simulation.
               </p>
             </div>
           </div>
